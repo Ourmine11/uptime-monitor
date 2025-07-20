@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Server Uptime Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background: #111; color: #fff; font-family: sans-serif; text-align: center; }
+    input, button { padding: 8px; margin: 5px; }
+    #app-section, #logoutBtn { display: none; }
+  </style>
+</head>
+<body>
+  <h2>Server Uptime Monitor</h2>
+
+  <!-- Login -->
+  <div id="login-section">
+    <input id="username" placeholder="Username">
+    <input id="password" type="password" placeholder="Password">
+    <button id="loginBtn">Login</button>
+    <p id="login-error" style="color:red;"></p>
+  </div>
+
+  <!-- App -->
+  <div id="app-section">
+    <input id="url" placeholder="Enter website URL">
+    <button onclick="startMonitoring()">Start Monitoring</button>
+    <button onclick="stopMonitoring()">Stop Monitoring</button>
+    <p id="status-label"></p>
+    <p id="error-msg" style="color: orange;"></p>
+    <canvas id="chart" width="500" height="200"></canvas>
+    <br>
+    <button onclick="downloadCSV()">Download CSV Report</button>
+    <br><br>
+    <button id="logoutBtn">Logout</button>
+  </div>
+
+<script>
+let chart, token = localStorage.getItem("auth_token") || "";
+
+function updateUI() {
+  const isLoggedIn = !!token;
+  document.getElementById("login-section").style.display = isLoggedIn ? "none" : "block";
+  document.getElementById("app-section").style.display = isLoggedIn ? "block" : "none";
+  document.getElementById("logoutBtn").style.display = isLoggedIn ? "inline-block" : "none";
+}
+
+document.getElementById("loginBtn").onclick = () => {
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+  fetch("/login", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username, password })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.token) {
+      token = data.token;
+      localStorage.setItem("auth_token", token);
+      updateUI();
+    } else {
+      document.getElementById("login-error").textContent = data.error || "Login failed";
+    }
+  });
+};
+
+document.getElementById("logoutBtn").onclick = () => {
+  localStorage.removeItem("auth_token");
+  token = "";
+  updateUI();
+};
+
+// Auth wrapper
+function authorizedFetch(url, options = {}) {
+  options.headers = { ...(options.headers || {}), "Authorization": `Bearer ${token}` };
+  return fetch(url, options);
+}
+
+// Monitor controls
+function startMonitoring() {
+  const url = document.getElementById("url").value;
+  authorizedFetch("/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url })
+  });
+}
+function stopMonitoring() {
+  authorizedFetch("/stop", { method: "POST" });
+}
+function downloadCSV() {
+  authorizedFetch("/download")
+    .then(resp => resp.blob())
+    .then(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "uptime_report.csv";
+      a.click();
+    });
+}
+
+// Polling chart + status
+function updateChart(data) {
+  const hasDown = data.some(d => d.y === 0);
+  console.log("Chart contains DOWN:", hasDown);
+
+  if (!chart) {
+    chart = new Chart(document.getElementById("chart"), {
+      type: "line",
+      data: {
+        labels: data.map(d => d.x),
+        datasets: [{
+          label: "Uptime (1=UP, 0=DOWN)",
+          data: data.map(d => d.y),
+          borderColor: "green",
+          borderWidth: 2,
+          fill: false
+        }]
+      },
+      options: {
+        scales: {
+          y: { min: 0, max: 1 },
+          x: { ticks: { maxTicksLimit: 10 } }
+        }
+      }
+    });
+  } else {
+    chart.data.labels = data.map(d => d.x);
+    chart.data.datasets[0].data = data.map(d => d.y);
+    chart.update();
+  }
+}
+
+function poll() {
+  if (!token) return;
+
+  authorizedFetch("/status")
+    .then(res => res.json())
+    .then(data => {
+      const statusLabel = document.getElementById("status-label");
+      const err = document.getElementById("error-msg");
+
+      if (data.last_status === 1) {
+        statusLabel.textContent = "✅ Site is UP";
+        statusLabel.style.color = "lightgreen";
+      } else if (data.last_status === 0) {
+        statusLabel.textContent = "❌ Site is DOWN";
+        statusLabel.style.color = "red";
+      } else {
+        statusLabel.textContent = "⏸️ Not running";
+        statusLabel.style.color = "gray";
+      }
+
+      err.textContent = data.last_error || "";
+    });
+
+  authorizedFetch("/logs")
+    .then(res => res.json())
+    .then(updateChart);
+}
+
+setInterval(poll, 5000);
+updateUI();
+</script>
+</body>
+</html>
