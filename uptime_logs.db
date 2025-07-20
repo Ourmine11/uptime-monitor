@@ -1,0 +1,13 @@
+import sqlite3
+
+DB_FILE = "uptime_logs.db"
+
+def init_db():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute('''CREATE TABLE IF NOT EXISTS uptime_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            url TEXT NOT NULL,
+            status INTEGER NOT NULL
+        )''')
+init_db()
