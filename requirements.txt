@@ -1,3 +1,4 @@
 flask
 requests
 python-dotenv
+sqlite3 ; standard lib, no need to install
