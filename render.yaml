@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: uptime-monitor
+    env: python
+    buildCommand: ""
+    startCommand: python app.py
+    envVars:
+      - key: UPTIME_USERNAME
+        value: admin
+      - key: UPTIME_PASSWORD
+        value: 1234
+      - key: UPTIME_TOKEN
+        value: demo-token
